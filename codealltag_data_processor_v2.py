@@ -382,6 +382,12 @@ class CodealltagDataProcessor:
             self.__create_same_annotation_count_path_df(reference_cdp)
         return pd.read_csv(same_annotation_count_path_df_path, index_col=0)
     
+    def get_same_entity_labels_path_df(self, reference_cdp: CodealltagDataProcessor, force_create: bool = False) -> DataFrame:
+        same_entity_labels_path_df_path = self.__get_same_entity_labels_path_df_path(reference_cdp)
+        if not os.path.exists(same_entity_labels_path_df_path) or force_create:
+            self.__create_same_entity_labels_path_df(reference_cdp)
+        return pd.read_csv(same_entity_labels_path_df_path, index_col=0)
+    
     def select_same_annotation_count_path_df(self,
                                              reference_cdp: CodealltagDataProcessor,
                                              max_file_count: int,
@@ -758,7 +764,19 @@ class CodealltagDataProcessor:
     def __get_same_annotation_count_path_df_path(self, reference_cdp: CodealltagDataProcessor) -> str:
         file_name = 'SameAnnotationCountPath_DF_' + self.get_data_version() + '_'  + reference_cdp.get_data_version() + '.csv'
         return os.path.join(self.get_xl_dir_path(), file_name)
-
+    
+    def __get_same_entity_labels_path_df_path(self, reference_cdp: CodealltagDataProcessor) -> str:
+        file_name = (
+            'SameEntityLabelsPath_DF_' + 
+            self.get_data_version() + 
+            '_'  + 
+            reference_cdp.get_data_version() + 
+            '_' +
+            str(self.max_file_size) + 
+            '.csv'
+        )
+        return os.path.join(self.get_xl_dir_path(), file_name)
+    
     def __create_selected_file_path_df(self) -> None:
         df = self.select_category_path_df(self.max_file_count, self.max_file_size, self.multiplier)
         df.to_csv(self.__get_selected_category_path_df_path())
@@ -799,6 +817,69 @@ class CodealltagDataProcessor:
         
         df = pd.DataFrame({'FilePath': files_with_same_annotation_count})
         df.to_csv(self.__get_same_annotation_count_path_df_path())
+    
+    def __create_same_entity_labels_path_df(self, reference_cdp: CodealltagDataProcessor) -> None:
+        
+        category_path_df = self.get_category_path_df()
+        same_entity_labels_path_df_tuples = list()
+        total_files_with_same_entity_labels = 0
+        
+        # [1]
+        # filter files that have file size <= 1000 bytes
+        category_path_df_filtered = category_path_df[category_path_df.FileSize <= self.max_file_size]
+        
+        category_path_df_filtered_rows = category_path_df_filtered.itertuples(index=True)
+        with tqdm(total=len(category_path_df_filtered), position=0, leave=True) as progress_bar:
+            for row in category_path_df_filtered_rows:
+                
+                email_file_path_reference_exists = os.path.exists(
+                    reference_cdp.get_absolute_email_file_path(row.FilePath)
+                )
+                annotations_file_path_exists = os.path.exists(
+                    self.get_absolute_annotations_file_path(row.FilePath)
+                )
+                annotations_file_path_reference_exists = os.path.exists(
+                    reference_cdp.get_absolute_annotations_file_path(row.FilePath)
+                )
+                
+                # [2]
+                # filter files that are present in both versions
+                if email_file_path_reference_exists and annotations_file_path_exists and annotations_file_path_reference_exists:
+                    
+                    annotation_df_by_file = self.get_annotation_df_by_file(row.FilePath)
+                    annotation_df_by_file_reference = reference_cdp.get_annotation_df_by_file(row.FilePath)
+                    
+                    # [3]
+                    # filter files that have at least one entity in respective annotation files
+                    if not annotation_df_by_file.empty and not annotation_df_by_file_reference.empty:
+                        
+                        # [4]
+                        # filter files that have same number of entities in both versions
+                        if len(annotation_df_by_file) == len(annotation_df_by_file_reference):
+                            
+                            labels = annotation_df_by_file.Label.str.cat(sep='-')
+                            labels_reference = annotation_df_by_file_reference.Label.str.cat(sep='-')
+                            
+                            # [5]
+                            # filter files that have exact same entity labels:
+                            if labels == labels_reference:
+                                
+                                same_entity_labels_path_df_tuples.append((
+                                    row.Index,
+                                    row.Category,
+                                    row.FilePath,
+                                    row.FileSize,
+                                    row.AnnotationFileExists
+                                ))
+                                total_files_with_same_entity_labels += 1
+                            
+                progress_bar.update(1)
+        
+        df = pd.DataFrame(
+            same_entity_labels_path_df_tuples,
+            columns=["ID"] + self.__get_category_path_df_columns()
+        )
+        df.to_csv(self.__get_same_entity_labels_path_df_path())
     
     def __prepare_selection_tag_2(self, reference_cdp: CodealltagDataProcessor) -> str:
         return '_'.join([
