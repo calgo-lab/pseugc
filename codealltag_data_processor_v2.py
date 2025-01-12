@@ -1,24 +1,28 @@
 from __future__ import annotations
 from datasets import Dataset, DatasetDict
-import glob
-import os
-import re
-from pathlib import Path
-from shutil import copy, rmtree
-from typing import Tuple, List, Dict, Union, Any
-
-import numpy as np
-import pandas as pd
-import torch
-import yaml
 from io import StringIO
 from IPython.display import display
+from matplotlib.gridspec import GridSpec
 from pandas import DataFrame
 from pandas.core.indexes.numeric import Int64Index
+from pathlib import Path
+from shutil import copy, rmtree
 from sklearn.model_selection import KFold
 from somajo import SoMaJo
 from tqdm import tqdm
+from typing import Tuple, List, Set, Dict, Union, Any
 from yaml.loader import SafeLoader
+
+import glob
+import os
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import random
+import re
+import torch
+import yaml
+
 
 
 class CodealltagDataProcessor:
@@ -565,6 +569,495 @@ class CodealltagDataProcessor:
             'test': test_ds
         })
     
+    
+    
+    # plot-related-functions
+    def plot_category_wise_frequency(self, input_dataframe: DataFrame, export: bool = False, ext: str = 'png') -> None:
+    
+        #========================================================
+        category_wise_counts = input_dataframe.groupby(
+            'Category'
+        ).agg(
+            Count=pd.NamedAgg(column='FilePath', aggfunc='count')
+        ).sort_values(
+            by='Category', ascending=True
+        )
+        #========================================================
+
+        #==========================================================
+        fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(15, 5))
+        fig.subplots_adjust(wspace=0.05)
+        #==========================================================
+
+        #===============================================================================================
+        max_value = category_wise_counts.Count.max()
+        buffer = max_value * 0.25
+        rightmost_tick = max_value + buffer
+        first_tick = max_value * 0.01
+        ticks = np.linspace(first_tick, rightmost_tick, 5)
+        
+        category_wise_counts.Count.plot.barh(
+            ax=axes[0],
+            color='#4DD0E1',
+            alpha=0.8
+        )
+        
+        axes[0].set_xlim(0, rightmost_tick)
+        axes[0].set_xticks(
+            ticks,
+            [self.human_format_xaxis(tick) for tick in ticks],
+            fontsize=15
+        )
+        axes[0].tick_params(axis='y', labelrotation=360, labelsize=15)
+        axes[0].grid(visible=False, axis='y')
+        axes[0].xaxis.grid(True, linestyle='--', alpha=0.7)
+        axes[0].bar_label(
+            axes[0].containers[0],
+            labels=[self.human_format_for_bars(value) for value in category_wise_counts.Count.tolist()],
+            padding=2,
+            color='r',
+            fontsize=13
+        )
+        axes[0].set_xlabel('Email Count', labelpad=15, fontsize=15)
+        axes[0].set_ylabel('Category', labelpad=15, fontsize=15)
+        axes[0].set_title('Category-wise email count', pad=15, fontsize=17)
+        #===============================================================================================
+
+        #==================================================================
+        categories_all = category_wise_counts.index.to_list()
+        categories_counts_all = category_wise_counts.Count.to_list()
+        categories_explode_all = tuple([
+            0.1 if item==max(categories_counts_all) else 0 
+            for item in categories_counts_all
+        ])
+
+        axes[1].pie(
+            categories_counts_all,
+            labels=categories_all,
+            explode=categories_explode_all,
+            autopct='%1.1f%%',
+            shadow=False,
+            startangle=100,
+            textprops={'fontsize': 15}
+        )
+        axes[1].axis('equal')
+        axes[1].set_title('Category-wise email share', pad=15, fontsize=17)
+        #==================================================================
+
+        plt.tight_layout()
+        plt.subplots_adjust(left=0.1, right=0.9, wspace=0.3)
+        
+        if export:
+            plt.savefig("category_wise_email_distribution_" + str(input_dataframe.shape[0]) + "." + ext,
+                        format=ext,
+                        dpi=1200,
+                        bbox_inches='tight')
+
+        plt.show();
+        
+    def plot_annotation_wise_frequency(self, input_dataframe: DataFrame, export: bool = False, ext: str = 'png') -> None:
+        
+        input_dataframe = input_dataframe.copy()
+        input_dataframe['Category'] = input_dataframe['FilePath'].apply(self.get_category_from_file_path)
+        
+        #====================================================================================
+        label_wise_counts = input_dataframe.groupby(
+            'Label'
+        ).agg(
+            Count=pd.NamedAgg(column='FilePath', aggfunc='count')
+        ).sort_values(
+            by='Label', ascending=True
+        )
+        label_wise_counts['Percentage'] = label_wise_counts['Count']/input_dataframe.shape[0]
+        label_wise_counts['Percentage'] = round(100*label_wise_counts['Percentage'], 2)
+        #====================================================================================
+
+        #=====================================================
+        category_wise_counts = input_dataframe.groupby(
+            'Category'
+        ).agg(
+            Count=pd.NamedAgg(column='Token', aggfunc='count')
+        ).sort_values(
+            by='Category', ascending=True
+        )
+        #=====================================================
+
+        #===========================================================
+        fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(15, 12))
+        fig.subplots_adjust(wspace=0.05)
+        fig.subplots_adjust(hspace=0.50)
+        #===========================================================
+
+        #===========================================================================================
+        max_value_lwbp = label_wise_counts.Count.max()
+        buffer_lwbp = max_value_lwbp * 0.25
+        rightmost_tick_lwbp = max_value_lwbp + buffer_lwbp
+        first_tick_lwbp = max_value_lwbp * 0.01
+        ticks_lwbp = np.linspace(first_tick_lwbp, rightmost_tick_lwbp, 5)
+        
+        label_wise_counts.Count.plot.barh(
+            ax=axes[0][0],
+            color='#4DD0E1',
+            alpha=0.8
+        )
+        
+        axes[0][0].set_xlim(0, rightmost_tick_lwbp)
+        axes[0][0].set_xticks(
+            ticks_lwbp,
+            [self.human_format_xaxis(tick) for tick in ticks_lwbp],
+            fontsize=15
+        )
+        axes[0][0].tick_params(axis='y', labelrotation=360, labelsize=15)
+        axes[0][0].grid(visible=False, axis='y')
+        axes[0][0].xaxis.grid(True, linestyle='--', alpha=0.7)
+        axes[0][0].bar_label(
+            axes[0][0].containers[0], 
+            labels=[self.human_format_for_bars(value) for value in label_wise_counts.Count.tolist()],
+            padding=2,
+            color='r',
+            fontsize=13
+        )
+        axes[0][0].set_xlabel('Entity Count', labelpad=15, fontsize=15)
+        axes[0][0].set_ylabel('Type', labelpad=15, fontsize=15)
+        axes[0][0].set_title('Type-wise entity count', pad=15, fontsize=17)
+        #===========================================================================================
+
+        #===============================================================================================
+        max_value_cwbp = category_wise_counts.Count.max()
+        buffer_cwbp = max_value_cwbp * 0.25
+        rightmost_tick_cwbp = max_value_cwbp + buffer_cwbp
+        first_tick_cwbp = max_value_cwbp * 0.01
+        ticks_cwbp = np.linspace(first_tick_cwbp, rightmost_tick_cwbp, 5)
+        
+        category_wise_counts.Count.plot.barh(
+            ax=axes[1][0],
+            color='#4DD0E1',
+            alpha=0.8
+        )
+        
+        axes[1][0].set_xlim(0, rightmost_tick_cwbp)
+        axes[1][0].set_xticks(
+            ticks_cwbp,
+            [self.human_format_xaxis(tick) for tick in ticks_cwbp],
+            fontsize=15
+        )
+        axes[1][0].tick_params(axis='y', labelrotation=360, labelsize=15)
+        axes[1][0].grid(visible=False, axis='y')
+        axes[1][0].xaxis.grid(True, linestyle='--', alpha=0.7)
+        axes[1][0].bar_label(
+            axes[1][0].containers[0], 
+            labels=[self.human_format_for_bars(value) for value in category_wise_counts.Count.tolist()],
+            padding=2,
+            color='r',
+            fontsize=13
+        )
+        axes[1][0].set_xlabel('Entity Count', labelpad=15, fontsize=15)
+        axes[1][0].set_ylabel('Category', labelpad=15, fontsize=15)
+        axes[1][0].set_title('Category-wise entity count', pad=15, fontsize=17)
+        #===============================================================================================
+
+
+        #===================================================================================================
+        labels_all = label_wise_counts.index.tolist()
+        labels_custom = label_wise_counts[label_wise_counts.Percentage > 5].index.tolist()
+        labels_other = sorted(list(set(labels_all)-set(labels_custom)))
+        labels_custom += ['+'.join(labels_other)]
+        labels_counts_custom = label_wise_counts[label_wise_counts.index.isin(labels_custom)].Count.tolist()
+        labels_counts_other = label_wise_counts[~label_wise_counts.index.isin(labels_custom)].Count.tolist()
+        labels_counts_custom += [sum(labels_counts_other)]
+        labels_explode_custom = tuple([
+            0.1 if item==max(labels_counts_custom) else 0 
+            for item in labels_counts_custom
+        ])
+
+        axes[0][1].pie(
+            labels_counts_custom,
+            labels=labels_custom,
+            explode=labels_explode_custom,
+            autopct='%1.1f%%',
+            startangle=100,
+            textprops={'fontsize': 14}
+        )
+        axes[0][1].axis('equal')
+        axes[0][1].set_title('Type-wise entity share', pad=20, fontsize=17)
+        #===================================================================================================
+
+        #======================================================================
+        categories_all = category_wise_counts.index.to_list()
+        categories_counts_all = category_wise_counts.Count.to_list()
+        categories_explode_all = tuple([
+            0.1 if item==max(categories_counts_all) else 0 
+            for item in categories_counts_all
+        ])
+
+        axes[1][1].pie(
+            categories_counts_all,
+            labels=categories_all,
+            explode=categories_explode_all,
+            autopct='%1.1f%%',
+            startangle=100,
+            textprops={'fontsize': 14}
+        )
+        axes[1][1].axis('equal')
+        axes[1][1].set_title('Category-wise entity share', pad=20, fontsize=17)
+        #======================================================================
+
+        if export:
+            plt.savefig("type_wise_and_category_wise_entity_distribution_" + str(input_dataframe.shape[0]) + "." + ext,
+                        format=ext,
+                        dpi=1200,
+                        bbox_inches='tight')
+
+        plt.show();
+        
+    def get_same_entity_labels_path_df_for_sample_size(self, 
+                                                       reference_cdp: CodealltagDataProcessor,
+                                                       sample_size: int,
+                                                       force_create: bool = False) -> DataFrame:
+        
+        same_entity_labels_path_df_path_for_sample_size = self.__get_same_entity_labels_path_df_path_for_sample_size(
+            reference_cdp,
+            sample_size
+        )
+        if not os.path.exists(same_entity_labels_path_df_path_for_sample_size) or force_create:
+            self.__prepare_3K_10K_samples(reference_cdp)
+        return pd.read_csv(same_entity_labels_path_df_path_for_sample_size, index_col=0)
+        
+    
+    def __prepare_3K_10K_samples(self, reference_cdp: CodealltagDataProcessor) -> None:
+        
+        same_entity_labels_path_df = self.get_same_entity_labels_path_df(reference_cdp=reference_cdp)
+        lrl_info_dict = self.__prepare_low_representative_label_info_dict(same_entity_labels_path_df)
+        
+        for sample_size in range(3000, 10000 + 1, 1000):
+            
+            sample_ids: List[int] = []
+            
+            lrl_ids_for_sample_size = self.__get_low_representative_label_ids_for_sample_size(
+                sample_size=sample_size,
+                low_representative_label_info_dict=lrl_info_dict
+            )
+            sample_ids.extend(lrl_ids_for_sample_size)
+            
+            cwrf_for_sample_size = self.__calculate_category_wise_required_files_for_sample_size(
+                sample_size=sample_size,
+                ids_for_sample_size=lrl_ids_for_sample_size,
+                same_entity_labels_path_df=same_entity_labels_path_df
+            )
+            cw_ids_for_sample_size = self.__get_category_wise_ids_for_sample_size(
+                sample_size=sample_size,
+                category_wise_required_files=cwrf_for_sample_size,
+                low_representative_ids=lrl_info_dict['IDS'],
+                same_entity_labels_path_df=same_entity_labels_path_df
+            )
+            sample_ids.extend(cw_ids_for_sample_size)
+            
+            sample_df = same_entity_labels_path_df[same_entity_labels_path_df.ID.isin(sample_ids)]
+            sample_df.to_csv(self.__get_same_entity_labels_path_df_path_for_sample_size(reference_cdp, sample_size))
+    
+
+    def __prepare_low_representative_label_info_dict(self, 
+                                                     same_entity_labels_path_df: DataFrame, 
+                                                     threshold: float = 0.025):
+        
+        low_representative_label_info_dict: Dict[str, Any] = dict()
+        
+        annotation_df = self.get_annotation_df()
+        annotation_df_filtered = annotation_df[
+            annotation_df.FilePath.isin(
+                same_entity_labels_path_df.FilePath.str.replace('.txt', '.ann', regex=True)
+            )
+        ]
+        
+        label_wise_ratios = self.get_category_or_label_wise_count_or_ratio(
+            input_dataframe=annotation_df_filtered,
+            category_wise=False,
+            ratio=True,
+            precision=5
+        )
+        
+        low_representative_labels: List[str] = []
+        for key, value in label_wise_ratios.items():
+            if value < threshold:
+                low_representative_labels.append(key)
+                low_representative_label_info_dict[key+'_RATIO'] = value
+        
+        low_representative_label_info_dict['LABELS'] = low_representative_labels
+        
+        
+        adf_txt = annotation_df_filtered.copy()
+        adf_txt['FilePath'] = adf_txt.FilePath.replace('.ann', '.txt', regex=True)
+        for label in low_representative_labels:
+            selpd_frac = same_entity_labels_path_df[
+                same_entity_labels_path_df.FilePath.isin(adf_txt[adf_txt.Label==label].FilePath)
+            ]
+            low_representative_label_info_dict[label+'_IDS'] = selpd_frac.ID.to_list()
+            low_representative_label_info_dict[label+'_MLA'] = selpd_frac.shape[0] // (10 - 3 + 1)
+        
+        low_representative_label_ids: List[int] = same_entity_labels_path_df[
+                same_entity_labels_path_df.FilePath.isin(
+                    adf_txt[adf_txt.Label.isin(low_representative_labels)].FilePath
+                )
+        ].ID.unique().tolist()
+        
+        low_representative_label_info_dict['IDS'] = low_representative_label_ids
+        return low_representative_label_info_dict
+
+    
+    def __get_low_representative_label_ids_for_sample_size(self, 
+                                                           sample_size: int,
+                                                           low_representative_label_info_dict: Dict[str, Any]) -> List[int]:
+        ids: Set[int] = set()
+        multiplier = int(((sample_size - 3000) // 1000) + 1)
+        for label in low_representative_label_info_dict['LABELS']:
+            ids = ids.union(
+                set(
+                    low_representative_label_info_dict[label+'_IDS'][
+                        0:(low_representative_label_info_dict[label+'_MLA']*multiplier)
+                    ]
+                )
+            )
+        return list(ids)
+    
+    def __calculate_category_wise_required_files_for_sample_size(self,
+                                                                 sample_size: int,
+                                                                 ids_for_sample_size: List[int],
+                                                                 same_entity_labels_path_df: DataFrame) -> Dict[str, int]:
+        
+        category_wise_ratio = self.get_category_or_label_wise_count_or_ratio(
+            input_dataframe=same_entity_labels_path_df,
+            category_wise=True,
+            ratio=True,
+            precision=2
+        )
+        category_wise_required_files = {
+            key: int(sample_size*value) 
+            for key, value in category_wise_ratio.items()
+        }
+        
+        category_wise_existing_files = self.get_category_or_label_wise_count_or_ratio(
+            input_dataframe=same_entity_labels_path_df[
+                same_entity_labels_path_df.ID.isin(ids_for_sample_size)
+            ]
+        )
+        category_wise_extra_files = {
+            key: (value - category_wise_required_files[key])
+            for key, value in category_wise_existing_files.items()
+            if value > category_wise_required_files[key]
+        }
+        
+        penalty_per_category: Dict[str, int] = {}
+        if sum(category_wise_extra_files.values()) > 0:
+            category_wise_required_files_tmp = {
+                key: (value - (category_wise_existing_files[key] if key in category_wise_existing_files.keys() else 0))
+                for key, value in category_wise_required_files.items()
+                if key not in category_wise_extra_files.keys()
+            }
+            
+            adjusted_category_wise_ratio = {
+                key: (value / sum(category_wise_required_files_tmp.values()))                            
+                for key, value in category_wise_required_files_tmp.items()
+            }
+            
+            penalty_per_category = {
+                key: int(round(sum(category_wise_extra_files.values()) * value, 0))
+                for key, value in adjusted_category_wise_ratio.items()
+            }
+        
+        adjusted_category_wise_required_files: Dict[str, int] = {}
+        for key, value in category_wise_required_files.items():
+            if key not in category_wise_extra_files:
+                adjusted_value = value
+                if key in category_wise_existing_files:
+                    adjusted_value = adjusted_value - category_wise_existing_files[key]
+                if key in penalty_per_category:
+                    adjusted_value = adjusted_value - penalty_per_category[key]
+                adjusted_category_wise_required_files[key] = adjusted_value
+        
+        total = sum(category_wise_existing_files.values()) + sum(adjusted_category_wise_required_files.values())
+        if total > sample_size:
+            max_value = max(adjusted_category_wise_required_files.values())
+            keys_with_max = [
+                key 
+                for key in adjusted_category_wise_required_files 
+                if adjusted_category_wise_required_files[key] == max_value
+            ]
+            key_with_max = keys_with_max[0]
+            adjusted_category_wise_required_files[key_with_max] = (
+                adjusted_category_wise_required_files[key_with_max] - (total - sample_size)
+            )
+        elif total < sample_size:
+            min_value = min(adjusted_category_wise_required_files.values())
+            keys_with_min = [
+                key 
+                for key in adjusted_category_wise_required_files 
+                if adjusted_category_wise_required_files[key] == min_value
+            ]
+            key_with_min = keys_with_min[0]
+            adjusted_category_wise_required_files[key_with_min] = (
+                adjusted_category_wise_required_files[key_with_min] + (sample_size - total)
+            )
+        
+        return adjusted_category_wise_required_files
+    
+    
+    def __get_category_wise_ids_for_sample_size(self,
+                                                sample_size: int, 
+                                                category_wise_required_files: Dict[str, int], 
+                                                low_representative_ids: List[int],
+                                                same_entity_labels_path_df: DataFrame):
+
+        category_wise_ids: List[int] = []
+        same_entity_labels_path_df_wo_lri = same_entity_labels_path_df[
+            ~same_entity_labels_path_df.ID.isin(low_representative_ids)
+        ]
+        for key in category_wise_required_files.keys():
+            ids_by_cat = same_entity_labels_path_df_wo_lri[same_entity_labels_path_df_wo_lri.Category==key]['ID'].tolist()
+            random.seed(sample_size)
+            selected_ids_by_cat = random.sample(ids_by_cat, category_wise_required_files[key])
+            category_wise_ids.extend(selected_ids_by_cat)
+
+        return category_wise_ids
+    
+    def get_category_or_label_wise_count_or_ratio(self, 
+                                                  input_dataframe: DataFrame,
+                                                  category_wise: bool = True,
+                                                  ratio: bool = False,
+                                                  precision: int = 2) -> Dict[str, Union[int, float]]:
+    
+        aggregation_df = input_dataframe.groupby(
+            ('Category' if category_wise else 'Label')
+        ).agg(
+            Count=pd.NamedAgg(column='FilePath', aggfunc='count')
+        ).sort_values(
+            by='Count', ascending=True
+        )
+        if ratio:
+            aggregation_df['Ratio'] = round(aggregation_df['Count']/input_dataframe.shape[0], precision)
+
+        category_wise_count_or_ratio: Dict[str, Union[int, float]] = {}
+        for key, value in zip(aggregation_df.index, aggregation_df[('Ratio' if ratio else 'Count')]):
+            category_wise_count_or_ratio[key] = value
+
+        return category_wise_count_or_ratio
+    
+    
+    @staticmethod
+    def human_format_for_bars(x):
+        if x >= 1_000_000:
+            return f'{x / 1_000_000:.2f}M'
+        elif x >= 1_000:
+            return f'{x / 1_000:.2f}K'
+        return str(int(x))
+    
+    @staticmethod
+    def human_format_xaxis(x):
+        if x >= 1_000_000:
+            return f'{x / 1_000_000:.0f}M'
+        elif x >= 1_000:
+            return f'{x / 1_000:.0f}K'
+        return str(int(x))
+    
         
     
     # private
@@ -777,6 +1270,22 @@ class CodealltagDataProcessor:
         )
         return os.path.join(self.get_xl_dir_path(), file_name)
     
+    def __get_same_entity_labels_path_df_path_for_sample_size(self, 
+                                                              reference_cdp: CodealltagDataProcessor,
+                                                              sample_size: int) -> str:
+        file_name = (
+            'SameEntityLabelsPath_DF_' + 
+            self.get_data_version() + 
+            '_'  + 
+            reference_cdp.get_data_version() + 
+            '_' +
+            str(self.max_file_size) + 
+            '_' + 
+            str(sample_size // 1000) + 'K' +
+            '.csv'
+        )
+        return os.path.join(self.get_xl_dir_path(), file_name)
+    
     def __create_selected_file_path_df(self) -> None:
         df = self.select_category_path_df(self.max_file_count, self.max_file_size, self.multiplier)
         df.to_csv(self.__get_selected_category_path_df_path())
@@ -879,7 +1388,7 @@ class CodealltagDataProcessor:
             same_entity_labels_path_df_tuples,
             columns=["ID"] + self.__get_category_path_df_columns()
         )
-        df.to_csv(self.__get_same_entity_labels_path_df_path())
+        df.to_csv(self.__get_same_entity_labels_path_df_path(reference_cdp))
     
     def __prepare_selection_tag_2(self, reference_cdp: CodealltagDataProcessor) -> str:
         return '_'.join([
