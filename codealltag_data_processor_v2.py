@@ -1041,6 +1041,119 @@ class CodealltagDataProcessor:
 
         return category_wise_count_or_ratio
     
+    def tokenize_with_somajo(self, text: str, label: Union[str, None] = None) -> List[str]:
+        tokenizer = self.__get_somajo_tokenizer()
+        tokenized_texts: List[str] = list()
+        for sentence in tokenizer.tokenize_text([text]):
+            for token in sentence:
+                tokenized_texts.append(token.text)
+
+        if label and len(tokenized_texts) > 0:
+            labeled_texts: List[str] = list()
+            if label == "O":
+                for item in tokenized_texts:
+                    labeled_texts.append(item + " " + label)
+            else:
+                labeled_texts.append(tokenized_texts[0] + " " + "B-" + label)
+                for item in tokenized_texts[1:len(tokenized_texts)]:
+                    labeled_texts.append(item + " " + "I-" + label)
+            return labeled_texts
+
+        return tokenized_texts
+    
+    def tokenize_with_somajo_and_annotation_df(self, email_file_path: str) -> str:
+        email_text = self.read_email(email_file_path)[1]
+        annotation_df = self.get_annotation_df_by_file(email_file_path)
+        non_entity_texts: List[str] = list()
+        entity_texts: List[str] = list()
+
+        text_stretch: str = ""
+        tokenized_list: List[str] = list()
+        tokenized_text: str = ""
+        next_start: int = 0
+        for index, row in annotation_df.iterrows():
+            if int(row.Start) > next_start:
+                text_stretch = email_text[next_start:int(row.Start)]
+                non_entity_texts.append(text_stretch)
+                tokenized_list = self.tokenize_with_somajo(text_stretch, "O")
+                if len(tokenized_list) > 0:
+                    tokenized_text += "\n".join(tokenized_list) + "\n"
+
+            text_stretch = email_text[int(row.Start): int(row.End)]
+            entity_texts.append(text_stretch)
+            tokenized_list = self.tokenize_with_somajo(text_stretch, row.Label)
+            tokenized_text += "\n".join(tokenized_list) + "\n"
+            next_start = int(row.End)
+
+        if len(email_text) > next_start:
+            text_stretch = email_text[next_start: len(email_text)]
+            non_entity_texts.append(text_stretch)
+            tokenized_list = self.tokenize_with_somajo(text_stretch, "O")
+            if len(tokenized_list) > 0:
+                tokenized_text += "\n".join(tokenized_list) + "\n"
+
+        return tokenized_text
+    
+    def get_output_sequence_for_seq2seq_ner_model(self, email_file_path: str) -> str:
+        annotation_df = self.get_annotation_df_by_file(email_file_path)
+        return (annotation_df.Label + ": " + annotation_df.Token).str.cat(sep="; ")
+    
+    def get_output_sequence_for_seq2seq_ner_pg_model(self,
+                                                     email_file_path: str, 
+                                                     reference_cdp: CodealltagDataProcessor) -> str:
+    
+        annotation_df = self.get_annotation_df_by_file(email_file_path)
+        annotation_df_reference = reference_cdp.get_annotation_df_by_file(email_file_path)
+        return (
+            annotation_df.Label +
+            ": " +
+            annotation_df.Token + 
+            " **" + 
+            annotation_df_reference.Token +
+            "**"
+        ).str.cat(sep="; ")
+    
+    def prepare_model_data_for_sample_size(self, 
+                                           sample_size: int, 
+                                           reference_cdp: CodealltagDataProcessor) -> None:
+        
+        print(f'[START] prepare model data for sample size: {sample_size}\n')
+        sample_df = self.get_same_entity_labels_path_df_for_sample_size(reference_cdp, sample_size)
+        
+        inp_type_1_texts: List[str] = list()
+        inp_type_2_texts: List[str] = list()
+        out_type_1_texts: List[str] = list()
+        out_type_2_texts: List[str] = list()
+        
+        with tqdm(total=sample_df.shape[0], position=0, leave=True) as progress_bar:
+            for index, row in sample_df.iterrows():
+                inp_type_1_text = self.tokenize_with_somajo_and_annotation_df(row.FilePath)
+                inp_type_1_texts.append(inp_type_1_text)
+
+                inp_type_2_text = " ".join(self.tokenize_with_somajo(self.read_email(row.FilePath)[1]))
+                inp_type_2_texts.append(inp_type_2_text)
+
+                out_type_1_text = self.get_output_sequence_for_seq2seq_ner_model(row.FilePath)
+                out_type_1_texts.append(out_type_1_text)
+
+                out_type_2_text = self.get_output_sequence_for_seq2seq_ner_pg_model(row.FilePath, reference_cdp)
+                out_type_2_texts.append(out_type_2_text)
+                
+                progress_bar.update(1)
+                
+        sample_df["InputType1"] = inp_type_1_texts
+        sample_df["InputType2"] = inp_type_2_texts
+        sample_df["OutputType1"] = out_type_1_texts
+        sample_df["OutputType2"] = out_type_2_texts
+        
+        sample_df.to_csv(self.__get_same_entity_labels_path_df_path_for_sample_size(reference_cdp, sample_size))
+        
+        print(f'[END] prepare model data for sample size: {sample_size}\n')
+        
+    def prepare_model_data_for_3K_10K_samples(self, reference_cdp: CodealltagDataProcessor) -> None:
+        for sample_size in range(3000, 10000 + 1, 1000):
+            self.prepare_model_data_for_sample_size(sample_size, reference_cdp)
+            
     
     @staticmethod
     def human_format_for_bars(x):
