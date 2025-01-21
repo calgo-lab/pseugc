@@ -1,0 +1,5 @@
+---
+codealltag_data_processor:
+  random_seed: 2025
+  data_dir_path: ['..', 'data']
+  max_file_size: 1000
