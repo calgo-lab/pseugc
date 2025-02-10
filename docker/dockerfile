@@ -1,0 +1,30 @@
+# Use official Python image
+FROM python:3.9
+
+# Set the working directory
+WORKDIR /app
+
+# Create the Huggingface cache directory
+RUN mkdir -p /root/.cache/huggingface/transformers
+
+# Copy pre-downloaded model
+COPY mt5-base/* /root/.cache/huggingface/transformers/
+
+# Copy necessary files - 1
+COPY requirements.txt ./
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
+RUN pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu121 && rm -rf /root/.cache/pip
+RUN pip install sentencepiece==0.1.95 && rm -rf /root/.cache/pip
+RUN pip install --upgrade protobuf==3.20.* && rm -rf /root/.cache/pip
+RUN pip install --upgrade numpy pandas && rm -rf /root/.cache/pip
+
+# Copy necessary files
+COPY app.py model_loader.py preload_model.py streamlit_app.py model.ckpt ./
+
+# Expose port 8000 (FastAPI), 8501 (Streamlit)
+EXPOSE 8000 8501
+
+# Preload model before starting API
+CMD ["sh", "-c", "python preload_model.py && uvicorn app:app --host 0.0.0.0 --port 8000"]
