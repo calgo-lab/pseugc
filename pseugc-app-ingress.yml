@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pseugc-app-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: "pseugc-app.project.ris.bht-berlin.de"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pseugc-app-service
+                port:
+                  name: ui
+          - path: /predict
+            pathType: Prefix
+            backend:
+              service:
+                name: pseugc-app-service
+                port:
+                  name: api

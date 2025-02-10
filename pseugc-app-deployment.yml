@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pseugc-app-deployment
+  namespace: s81481
+spec:
+  selector:
+    matchLabels:
+      app: pseugc-app
+  template:
+    metadata:
+      labels:
+        app: pseugc-app
+    spec:
+      containers:
+        - name: pseugc-app
+          image: sksdotsauravs/pseugc-app:latest
+          ports:
+            - containerPort: 8000
+            - containerPort: 8501
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+              memory: 8192Mi
+              cpu: 4
+      nodeSelector:
+        gpu: p100
