@@ -1237,6 +1237,43 @@ class CodealltagDataProcessor:
             output_text = output_text[:(row.Start+offset)] + row.Pseudonym + output_text[(row.End+offset):]
             offset += len(row.Pseudonym) - len(row.Token)
         return output_text
+    
+    @staticmethod
+    def convert_classification_report_text_file_to_dict(report_text_file_dir: List[str], overwrite: bool = False) -> None:
+        
+        file_paths = glob.glob(os.path.join(*report_text_file_dir, "*.txt"))
+        for file_path in tqdm(file_paths, position=0, leave=True):
+            with open(file_path, 'r', encoding='utf-8') as file_reader:
+                lines = file_reader.readlines()
+
+            metrics_dict = {}
+            start_processing = False
+            for line in lines:
+                line = line.strip()
+                
+                if "precision" in line and "recall" in line and "f1-score" in line and "support" in line:
+                    start_processing = True
+                    continue
+                
+                if start_processing:
+                    match = re.match(r"(\S[\S ]*\S)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+)", line)
+                    if match:
+                        class_name, precision, recall, f1_score, support = match.groups()
+                        metrics_dict[class_name] = {
+                            "precision": float(precision),
+                            "recall": float(recall),
+                            "f1-score": float(f1_score),
+                            "support": int(support)
+                        }
+            
+            if overwrite:
+                write_file_path = file_path
+            else:
+                filename = os.path.splitext(os.path.basename(file_path))[0]
+                write_file_path = os.path.join(*report_text_file_dir, f"{filename}_dict.txt")
+            
+            with open(write_file_path, 'w', encoding='utf-8') as file_writer:
+                file_writer.write(str(metrics_dict))
 
     @staticmethod
     def cuda_empty_cache() -> None:
