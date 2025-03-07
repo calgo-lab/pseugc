@@ -319,6 +319,48 @@ class CodealltagDataProcessor:
             'test': test_ds
         })
     
+    def get_train_dev_test_indices_for_sample_df_10_8_2(self, 
+                                                        sample_df: DataFrame,
+                                                        test_data_count: int) -> List[Tuple]:
+        fold_tuples = list()
+        sample_df = sample_df.sample(frac=1, random_state = self.get_random_seed(), ignore_index=True)
+        test_indices = random.Random(self.get_random_seed()).sample(sample_df.ID.tolist(), test_data_count)
+        sample_df = sample_df[~sample_df.ID.isin(test_indices)]
+        sample_df.reset_index(drop=True, inplace=True)
+        splits = list(KFold(n_splits=10, shuffle=True, random_state=self.get_random_seed()).split(sample_df.index.to_numpy()))
+        train_dev_k_folds = self.get_train_dev_folds_10_8_2()
+        for index, fold in enumerate(train_dev_k_folds):
+            train_indices = list()
+            fold_train_indices = fold[1]
+            for fold_train_index in fold_train_indices:
+                train_indices += list(splits[fold_train_index][1])
+            dev_indices = list()
+            fold_dev_indices = fold[2]
+            for fold_dev_index in fold_dev_indices:
+                dev_indices += list(splits[fold_dev_index][1])
+            fold_tuples.append((
+                index + 1,
+                sample_df[sample_df.index.isin(train_indices)].ID.tolist(),
+                sample_df[sample_df.index.isin(dev_indices)].ID.tolist(),
+                test_indices
+            ))
+        return fold_tuples
+    
+    def get_train_dev_test_datasetdict_for_sample_df_10_8_2(self,
+                                                            sample_df: DataFrame,
+                                                            test_data_count: int,
+                                                            k: int = 1) -> DatasetDict:
+        
+        sample_df = sample_df.copy()
+        sample_df.reset_index(drop=True, inplace=True)
+        sample_df = sample_df.assign(ID=sample_df.index)
+        fold_tuples = self.get_train_dev_test_indices_for_sample_df_10_8_2(sample_df, test_data_count)
+        kth_tuple = fold_tuples[k-1]
+        train_ds = Dataset.from_pandas(sample_df[sample_df.ID.isin(kth_tuple[1])])
+        dev_ds = Dataset.from_pandas(sample_df[sample_df.ID.isin(kth_tuple[2])])
+        test_ds = Dataset.from_pandas(sample_df[sample_df.ID.isin(kth_tuple[3])])
+        return DatasetDict({'train': train_ds, 'dev': dev_ds, 'test': test_ds})
+    
     # plot-related-functions
     def plot_category_wise_frequency(self, input_dataframe: DataFrame, export: bool = False, ext: str = 'png') -> None:
     
@@ -1128,6 +1170,21 @@ class CodealltagDataProcessor:
         return fold_tuples
     
     @staticmethod
+    def get_train_dev_folds_10_8_2() -> List[Tuple]:
+        fold_tuples = list()
+        indices = list(range(10))
+        for index in indices:
+            rolled_indices = np.roll(indices, -index)
+            train_indices = list(rolled_indices[0:(10 - 2)])
+            dev_indices = list(rolled_indices[-2:])
+            fold_tuples.append((
+                index + 1,
+                train_indices,
+                dev_indices
+            ))
+        return fold_tuples
+    
+    @staticmethod
     def get_annotation_df_with_input_text_and_predicted_text(input_text: str, 
                                                              predicted_text: str,
                                                              labels: List[str]) -> DataFrame:
@@ -1237,6 +1294,21 @@ class CodealltagDataProcessor:
             output_text = output_text[:(row.Start+offset)] + row.Pseudonym + output_text[(row.End+offset):]
             offset += len(row.Pseudonym) - len(row.Token)
         return output_text
+    
+    @staticmethod
+    def get_annotation_df_for_pseudonymized_text(pseudonymized_text: str, pseudonymized_annotation_df: DataFrame) -> DataFrame:
+        tuples = list()
+        last_cursor = 0
+        for index, row in pseudonymized_annotation_df.iterrows():
+            pseudonym = row.Pseudonym
+            start = pseudonymized_text[last_cursor:].find(pseudonym)
+            if start != -1:
+                tuples.append((row.Token_ID, row.Label, last_cursor+start, last_cursor+start+len(pseudonym), pseudonym))
+                last_cursor += (start + len(pseudonym))
+        return pd.DataFrame(
+            tuples,
+            columns=["Token_ID", "Label", "Start", "End", "Token"]
+        )
     
     @staticmethod
     def convert_classification_report_text_file_to_dict(report_text_file_dir: List[str], overwrite: bool = False) -> None:
