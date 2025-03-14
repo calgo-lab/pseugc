@@ -1,0 +1,1 @@
+{'PSEUD': {'precision': 0.8, 'recall': 0.816, 'f1-score': 0.8079, 'support': 250}, 'ORIG': {'precision': 0.8122, 'recall': 0.796, 'f1-score': 0.804, 'support': 250}, 'macro avg': {'precision': 0.8061, 'recall': 0.806, 'f1-score': 0.806, 'support': 500}, 'weighted avg': {'precision': 0.8061, 'recall': 0.806, 'f1-score': 0.806, 'support': 500}}

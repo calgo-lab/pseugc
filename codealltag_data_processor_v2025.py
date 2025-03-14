@@ -361,6 +361,68 @@ class CodealltagDataProcessor:
         test_ds = Dataset.from_pandas(sample_df[sample_df.ID.isin(kth_tuple[3])])
         return DatasetDict({'train': train_ds, 'dev': dev_ds, 'test': test_ds})
     
+    def get_train_dev_test_indices_for_syntheticity_dataset(self, 
+                                                            sample_df: DataFrame,
+                                                            test_data_count: int) -> List[Tuple]:
+        fold_tuples = list()
+        
+        rs = self.get_random_seed()
+        sample_df = sample_df.sample(frac=1, random_state = rs, ignore_index=True)
+        
+        test_indices = list()
+        test_indices.extend(random.Random(rs).sample(sample_df[sample_df.Type=="ORIG"].ID.tolist(), int(test_data_count/2)))
+        test_indices.extend(random.Random(rs).sample(sample_df[sample_df.Type=="PSEUD"].ID.tolist(), int(test_data_count/2)))
+        
+        sample_df = sample_df[~sample_df.ID.isin(test_indices)]
+        
+        sample_df_orig = sample_df[sample_df.Type=="ORIG"]
+        sample_df_orig.reset_index(drop=True, inplace=True)
+        splits_orig = list(KFold(n_splits=5, shuffle=True, random_state=rs).split(sample_df_orig.index.to_numpy()))
+        
+        sample_df_pseud = sample_df[sample_df.Type=="PSEUD"]
+        sample_df_pseud.reset_index(drop=True, inplace=True)
+        splits_pseud = list(KFold(n_splits=5, shuffle=True, random_state=rs).split(sample_df_pseud.index.to_numpy()))
+        
+        train_dev_k_folds = self.get_train_dev_folds(n_fold=5)
+        for index, fold in enumerate(train_dev_k_folds):
+            train_indices_orig = list()
+            train_indices_pseud = list()
+            
+            fold_train_indices = fold[1]
+            for fold_train_index in fold_train_indices:
+                train_indices_orig += list(splits_orig[fold_train_index][1])
+                train_indices_pseud += list(splits_pseud[fold_train_index][1])
+            
+            dev_indices_orig = list(splits_orig[fold[2][0]][1])
+            dev_indices_pseud = list(splits_pseud[fold[2][0]][1])
+            
+            train_indices = list()
+            train_indices.extend(sample_df_orig[sample_df_orig.index.isin(train_indices_orig)].ID.tolist())
+            train_indices.extend(sample_df_pseud[sample_df_pseud.index.isin(train_indices_pseud)].ID.tolist())
+            
+            dev_indices = list()
+            dev_indices.extend(sample_df_orig[sample_df_orig.index.isin(dev_indices_orig)].ID.tolist())
+            dev_indices.extend(sample_df_pseud[sample_df_pseud.index.isin(dev_indices_pseud)].ID.tolist())
+            
+            fold_tuples.append((index + 1, train_indices, dev_indices, test_indices))
+            
+        return fold_tuples
+    
+    def get_train_dev_test_datasetdict_for_syntheticity_dataset(self,
+                                                                sample_df: DataFrame,
+                                                                test_data_count: int,
+                                                                k: int = 1) -> DatasetDict:
+        
+        sample_df = sample_df.copy()
+        sample_df.reset_index(drop=True, inplace=True)
+        sample_df = sample_df.assign(ID=sample_df.index)
+        fold_tuples = self.get_train_dev_test_indices_for_syntheticity_dataset(sample_df, test_data_count)
+        kth_tuple = fold_tuples[k-1]
+        train_ds = Dataset.from_pandas(sample_df[sample_df.ID.isin(kth_tuple[1])])
+        dev_ds = Dataset.from_pandas(sample_df[sample_df.ID.isin(kth_tuple[2])])
+        test_ds = Dataset.from_pandas(sample_df[sample_df.ID.isin(kth_tuple[3])])
+        return DatasetDict({'train': train_ds, 'dev': dev_ds, 'test': test_ds})
+    
     # plot-related-functions
     def plot_category_wise_frequency(self, input_dataframe: DataFrame, export: bool = False, ext: str = 'png') -> None:
     
@@ -1188,37 +1250,36 @@ class CodealltagDataProcessor:
     def get_annotation_df_with_input_text_and_predicted_text(input_text: str, 
                                                              predicted_text: str,
                                                              labels: List[str]) -> DataFrame:
+
         tuples = list()
 
         input_text_length = len(input_text)
         input_text_copy = input_text[0: input_text_length]
 
-        item_delim = "; "
-        token_delim = ": "
-        pseudonym_delim = " **"
+        item_delim = ";"
+        token_delim = ":"
         token_id = 0
         next_cursor = 0
 
         predicted_items = predicted_text.split(item_delim)
         for item in predicted_items:
-
+            item = item.strip()
             label, token, pseudonym = "", "", ""
 
             for l in labels:
-                if item.startswith(l):
+                if re.search((r'\b' + l + r'\b' +':'), item):
                     label = l
+                    break
 
-            if label != "" and (label+token_delim) in item:
-                
+            if label != "":
+                item = item[item.find(label + ":"):]
                 value_splits = item.split(label+token_delim)
-                token_pseudonym = value_splits[1]
-
-                if (pseudonym_delim in token_pseudonym and token_pseudonym.endswith(pseudonym_delim.strip())):
-
-                    pseudonym_splits = token_pseudonym.split(pseudonym_delim)
-                    token = pseudonym_splits[0]
-                    pseudonym = pseudonym_splits[1][:-2]
-
+                token_pseudonym = value_splits[1].strip()
+                pattern = r'^(.*?)\s*\*\*(.*?)\*\*'
+                matches = re.search(pattern, token_pseudonym)
+                if matches:
+                    token = matches.group(1)
+                    pseudonym = matches.group(2)
                 else:
                     token = token_pseudonym
                 
@@ -1226,8 +1287,8 @@ class CodealltagDataProcessor:
 
                     start = input_text_copy.find(token)
                     if start == -1 and ' ' in token:
-                        start = input_text_copy.find(token.split(' ')[0])
                         token = token.replace(' ', '')
+                        start = input_text_copy.find(token)
 
                     if start != -1:
                         end = start + len(token)

@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: s81481-ollama-pvc
+  namespace: s81481
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 16Gi
+  storageClassName: shared
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ollama-pod
+  namespace: s81481
+spec:
+  containers:
+    - name: ollama
+      image: ollama/ollama:latest
+      imagePullPolicy: IfNotPresent
+      ports:
+        - containerPort: 11434
+      env:
+        - name: OLLAMA_HOST
+          value: "0.0.0.0:11434"
+      resources:
+        limits:
+          nvidia.com/gpu: 1
+          memory: 8192Mi
+          cpu: 4
+      lifecycle:
+        postStart:
+          exec:
+            command:
+              - "/bin/sh"
+              - "-c"
+              - "ollama pull llama3.1:8b && ollama pull gemma2:9b"
+      command: ["ollama", "serve"]
+      volumeMounts:
+        - mountPath: "/root/.ollama"
+          name: s81481-ollama
+  nodeSelector:
+    gpu: v100
+  volumes:
+    - name: s81481-ollama
+      persistentVolumeClaim:
+        claimName: s81481-ollama-pvc
