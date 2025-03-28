@@ -6,6 +6,7 @@ from typing import List, Dict, Any
 
 import logging
 import pandas as pd
+import re
 import subprocess
 import threading
 import torch
@@ -47,32 +48,30 @@ def get_annotation_df_with_input_text_and_predicted_text(input_text: str,
     input_text_length = len(input_text)
     input_text_copy = input_text[0: input_text_length]
 
-    item_delim = "; "
-    token_delim = ": "
-    pseudonym_delim = " **"
+    item_delim = ";"
+    token_delim = ":"
     token_id = 0
     next_cursor = 0
 
     predicted_items = predicted_text.split(item_delim)
     for item in predicted_items:
-
+        item = item.strip()
         label, token, pseudonym = "", "", ""
 
         for l in labels:
-            if item.startswith(l):
+            if re.search((r'\b' + l + r'\b' +':'), item):
                 label = l
+                break
 
-        if label != "" and (label+token_delim) in item:
-
+        if label != "":
+            item = item[item.find(label + ":"):]
             value_splits = item.split(label+token_delim)
-            token_pseudonym = value_splits[1]
-
-            if (pseudonym_delim in token_pseudonym and token_pseudonym.endswith(pseudonym_delim.strip())):
-
-                pseudonym_splits = token_pseudonym.split(pseudonym_delim)
-                token = pseudonym_splits[0]
-                pseudonym = pseudonym_splits[1][:-2]
-
+            token_pseudonym = value_splits[1].strip()
+            pattern = r'^(.*?)\s*\*\*(.*?)\*\*'
+            matches = re.search(pattern, token_pseudonym)
+            if matches:
+                token = matches.group(1)
+                pseudonym = matches.group(2)
             else:
                 token = token_pseudonym
 
@@ -80,8 +79,8 @@ def get_annotation_df_with_input_text_and_predicted_text(input_text: str,
 
                 start = input_text_copy.find(token)
                 if start == -1 and ' ' in token:
-                    start = input_text_copy.find(token.split(' ')[0])
                     token = token.replace(' ', '')
+                    start = input_text_copy.find(token)
 
                 if start != -1:
                     end = start + len(token)
@@ -127,6 +126,7 @@ def predict(input_data: ApiRequest):
             per_text_output: List[DataItem] = list()
             for repeat_count in range(0, input_data.repeat):
                 predicted_text = model_loader.predict(input_text)
+                print(predicted_text)
                 output_df = get_annotation_df_with_input_text_and_predicted_text(input_text, predicted_text, labels)
                 output_text = get_pseudonymized_text(input_text, output_df)
                 data_item = DataItem(output_dict=output_df.to_dict(), output_text=output_text)

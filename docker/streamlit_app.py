@@ -1,3 +1,4 @@
+import html
 import json
 import requests
 import streamlit as st
@@ -240,23 +241,23 @@ if st.session_state["processed_data"]:
             if start_idx != -1:
                 
                 # Add text before the found pseudonym in pseudonymized output text
-                decorated_output += output_text[prev_end: start_idx]
+                decorated_output += html.escape(output_text[prev_end: start_idx])
 
                 # Add and decorate the original token with strikethrough
                 decorated_output += (
-                    f'<span class="{label.lower()}-label label-extra label-token">{token}</span> '
+                    f'<span class="{label.lower()}-label label-extra label-token">{html.escape(token)}</span> '
                 )
 
                 # Place and decorate the pseudonym
                 decorated_output += (
-                    f'<span class="{label.lower()}-label label-extra">{pseudonym}</span>'
+                    f'<span class="{label.lower()}-label label-extra">{html.escape(pseudonym)}</span>'
                 )
 
                 # Update last processed index
                 prev_end = start_idx + len(pseudonym)
 
         # Add remaining text
-        decorated_output += output_text[prev_end:]
+        decorated_output += html.escape(output_text[prev_end:])
         
         # Replace all new lines with HTML line break
         decorated_output = decorated_output.replace("\n", "<br>")

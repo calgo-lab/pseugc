@@ -5,23 +5,23 @@ FROM python:3.9
 WORKDIR /app
 
 # Create the Huggingface cache directory
-RUN mkdir -p /root/.cache/huggingface/transformers
+RUN mkdir -p model_checkpoint_dir
 
-# Copy pre-downloaded model
-COPY mt5-base/* /root/.cache/huggingface/transformers/
+# Copy model checkpoint contents [config.json, pytorch_model.bin, special_tokens_map.json, spiece.model, tokenizer.json, tokenizer_config.json]
+COPY model_checkpoint_dir/* /app/model_checkpoint_dir/
 
 # Copy necessary files - 1
 COPY requirements.txt ./
 
 # Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
 RUN pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu121 && rm -rf /root/.cache/pip
+RUN pip install --no-cache-dir -r requirements.txt && rm -rf /root/.cache/pip
 RUN pip install sentencepiece==0.1.95 && rm -rf /root/.cache/pip
 RUN pip install --upgrade protobuf==3.20.* && rm -rf /root/.cache/pip
 RUN pip install --upgrade numpy pandas && rm -rf /root/.cache/pip
 
 # Copy necessary files
-COPY app.py model_loader.py preload_model.py streamlit_app.py model.ckpt ./
+COPY app.py model_loader.py preload_model.py streamlit_app.py ./
 
 # Expose port 8000 (FastAPI), 8501 (Streamlit)
 EXPOSE 8000 8501

@@ -1,42 +1,15 @@
 import logging
 import os
-import pytorch_lightning as pl
 import torch
 from timeit import default_timer as timer
-from transformers import (
-    MT5ForConditionalGeneration,
-    MT5TokenizerFast
-)
+from transformers import MT5ForConditionalGeneration, MT5TokenizerFast
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = "model.ckpt"
-
-class LightningModel(pl.LightningModule):
-    
-    def __init__(self, hparam):
-        super(LightningModel, self).__init__()
-        self.hparam = hparam
-        self.model = MT5ForConditionalGeneration.from_pretrained(hparam.model_name_or_path)
-        self.tokenizer = MT5TokenizerFast.from_pretrained(hparam.model_name_or_path)
-
-    def forward(self, 
-                input_ids,
-                attention_mask=None,
-                decoder_input_ids=None,
-                decoder_attention_mask=None,
-                labels=None):
-        
-        return self.model(
-            input_ids,
-            attention_mask=attention_mask,
-            decoder_input_ids=decoder_input_ids,
-            decoder_attention_mask=decoder_attention_mask,
-            labels=labels,
-        )
+MODEL_CHECKPOINT_DIR = "model_checkpoint_dir"
 
 class ModelLoader:
     
@@ -52,11 +25,10 @@ class ModelLoader:
         if ModelLoader._instance is not None:
             raise Exception("This class is a singleton! Use get_instance() instead.")
         
-        logger.info("Loading PyTorch Lightning Model...")
+        logger.info("Loading PyTorch Model...")
         try:
-            lightning_model = LightningModel.load_from_checkpoint(MODEL_PATH)
-            self.model = lightning_model.model
-            self.tokenizer = lightning_model.tokenizer
+            self.model = MT5ForConditionalGeneration.from_pretrained(MODEL_CHECKPOINT_DIR)
+            self.tokenizer = MT5TokenizerFast.from_pretrained(MODEL_CHECKPOINT_DIR)
             
             self.model.eval()
             

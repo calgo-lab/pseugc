@@ -1,2 +1,1 @@
-docker/model.ckpt
-docker/mt5-base/*
+docker/model_checkpoint_dir/pytorch_model.bin
