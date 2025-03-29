@@ -1,7 +1,5 @@
 # pseugc
 
----
-
 pseugc (**pse**udonymize **u**ser **g**enerated **c**ontent) is the project 
 developed as the output of Master's thesis titled "_De-identification 
 techniques with large language models_" by Saurav Kumar Saha as a requirement 
