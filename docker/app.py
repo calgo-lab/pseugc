@@ -1,7 +1,9 @@
+from flair.data import Sentence
 from fastapi import FastAPI, HTTPException
 from model_loader import ModelLoader
 from pandas import DataFrame
 from pydantic import BaseModel
+from somajo import SoMaJo
 from typing import List, Dict, Any
 
 import logging
@@ -26,8 +28,14 @@ model_loader = ModelLoader.get_instance()
 labels = ['CITY', 'DATE', 'EMAIL', 'FAMILY', 'FEMALE', 'MALE', 'ORG', 
           'PHONE', 'STREET', 'STREETNO', 'UFID', 'URL', 'USER', 'ZIP']
 
+supported_entity_set_model_dict = {
+    "codealltag": ["bilstmcrf", "gelectra", "mt5"]
+}
+
 # Define input schema
 class ApiRequest(BaseModel):
+    entity_set_id: str
+    model_id: str
     input_texts: list[str]
     repeat: int
 
@@ -116,23 +124,117 @@ def get_pseudonymized_text(input_text: str, predicted_annotation_df: DataFrame) 
     return output_text
 
 
+def _get_somajo_tokenized_sentences(text: str) -> List[Sentence]:
+    tokenizer = SoMaJo("de_CMC", split_camel_case=False)
+    sentences: List[Sentence] = list()
+    for sentence in tokenizer.tokenize_text([text]):
+        sentences.append(Sentence([token.text for token in sentence]))
+    return sentences
+
+def get_annotation_df_with_flair_tagger(input_text: str, tagger_id: str) -> DataFrame:
+    tuples = list()
+    
+    email_content = input_text
+    sentences = _get_somajo_tokenized_sentences(input_text)
+
+    sentences = model_loader.predict_with_codealltag_tagger(tagger_id, sentences)
+
+    email_content_length = len(email_content)
+    email_content_copy = email_content[0:email_content_length]
+
+    token_id = 0
+    next_cursor = 0
+    for sentence in sentences:
+        labels = sentence.get_labels()
+        for label in labels:
+            text = label.data_point.text
+            start = email_content_copy.find(text)
+            if start == -1 and ' ' in text:
+                start = email_content_copy.find(text.split(' ')[0])
+                text = text.replace(' ', '')
+
+            if start != -1:
+                end = start + len(text)
+
+                token_id += 1
+                prev_cursor = next_cursor
+                next_cursor += end
+                email_content_copy = email_content[next_cursor:email_content_length]
+
+                start = prev_cursor + start
+                end = prev_cursor + end
+
+                tuples.append((
+                    'T' + str(token_id),
+                    label.value,
+                    start,
+                    end,
+                    email_content[start:end]
+                ))
+            else:
+                token_id += 1
+                tuples.append((
+                    'T' + str(token_id),
+                    label.value,
+                    -1,
+                    -1,
+                    text
+                ))
+
+    return pd.DataFrame(
+        tuples,
+        columns=["Token_ID", "Label", "Start", "End", "Token"]
+    )
+
+def _process_for_codealltag_mT5(input_data, output):
+    for input_text in input_data.input_texts:
+        per_text_output: List[DataItem] = list()
+        for repeat_count in range(0, input_data.repeat):
+            predicted_text = model_loader.predict_with_codealltag_mT5(input_text)
+            print(predicted_text)
+            output_df = get_annotation_df_with_input_text_and_predicted_text(input_text, predicted_text, labels)
+            output_text = get_pseudonymized_text(input_text, output_df)
+            data_item = DataItem(output_dict=output_df.to_dict(), output_text=output_text)
+            per_text_output.append(data_item)
+        output.append(per_text_output)
+    
+    return output
+
+def _process_for_codealltag_tagger(input_data, output):
+    tagger_id = input_data.entity_set_id + '_' + input_data.model_id
+    for input_text in input_data.input_texts:
+        per_text_output: List[DataItem] = list()
+        output_df = get_annotation_df_with_flair_tagger(input_text, tagger_id)
+        data_item = DataItem(output_dict=output_df.to_dict(), output_text='not_available')
+        per_text_output.append(data_item)
+        output.append(per_text_output)
+    
+    return output
+
+def _process_for_entity_set_and_model(input_data, output):
+    if input_data.entity_set_id == 'codealltag':
+        if input_data.model_id == 'mt5':
+            output = _process_for_codealltag_mT5(input_data, output)
+        else:
+            output = _process_for_codealltag_tagger(input_data, output)
+
+    return output
+
 @app.post("/predict", response_model=ApiResponse)
 def predict(input_data: ApiRequest):
     
     output: List[List[DataItem]] = list()
     
     try:
-        for input_text in input_data.input_texts:
-            per_text_output: List[DataItem] = list()
-            for repeat_count in range(0, input_data.repeat):
-                predicted_text = model_loader.predict(input_text)
-                print(predicted_text)
-                output_df = get_annotation_df_with_input_text_and_predicted_text(input_text, predicted_text, labels)
-                output_text = get_pseudonymized_text(input_text, output_df)
-                data_item = DataItem(output_dict=output_df.to_dict(), output_text=output_text)
-                per_text_output.append(data_item)
-            output.append(per_text_output)
+        if not input_data.entity_set_id or input_data.entity_set_id not in supported_entity_set_model_dict.keys():
+            msg: str = f'Invalid entity_set_id={input_data.entity_set_id}, supported values: {list(supported_entity_set_model_dict.keys())}'
+            raise Exception(msg)
         
+        if not input_data.model_id or input_data.model_id not in supported_entity_set_model_dict[input_data.entity_set_id]:
+            msg: str = f'Invalid model_id, supported values: {supported_entity_set_model_dict[input_data.entity_set_id]}'
+            raise Exception(msg)
+        
+        output = _process_for_entity_set_and_model(input_data, output)
         return ApiResponse(output=output)
     
     except Exception as e:

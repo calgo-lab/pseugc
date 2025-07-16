@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: pseugc-app-deployment
-  namespace: s81481
+  namespace: calgo-lab
 spec:
   selector:
     matchLabels:

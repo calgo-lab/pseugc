@@ -2,12 +2,13 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: pseugc-app-ingress
+  namespace: calgo-lab
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt
 spec:
   ingressClassName: nginx
   rules:
-    - host: "pseugc-app.demo.calgo-lab.de"
+    - host: "redakto.demo.calgo-lab.de"
       http:
         paths:
           - path: /
@@ -25,6 +26,6 @@ spec:
                 port:
                   name: api
   tls:
-  - hosts:
-    - "pseugc-app.demo.calgo-lab.de"
-    secretName: "pseugc-app-demo-subdomain-ingress"
+    - hosts:
+      - "redakto.demo.calgo-lab.de"
+      secretName: "pseugc-app-demo-subdomain-ingress"
