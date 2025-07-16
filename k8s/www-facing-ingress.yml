@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pseugc-app-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: "pseugc-app.demo.calgo-lab.de"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pseugc-app-service
+                port:
+                  name: ui
+          - path: /predict
+            pathType: Prefix
+            backend:
+              service:
+                name: pseugc-app-service
+                port:
+                  name: api
+  tls:
+  - hosts:
+    - "pseugc-app.demo.calgo-lab.de"
+    secretName: "pseugc-app-demo-subdomain-ingress"

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: pseugc-app-deployment
-  namespace: s81481
+  namespace: calgo-lab
 spec:
   selector:
     matchLabels:
@@ -14,7 +14,8 @@ spec:
     spec:
       containers:
         - name: pseugc-app
-          image: sksdotsauravs/pseugc-app:latest
+          image: chandlernick/pseugc-app:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
             - containerPort: 8501
