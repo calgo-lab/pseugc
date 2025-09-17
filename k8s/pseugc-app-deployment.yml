@@ -19,9 +19,9 @@ spec:
             - containerPort: 8000
             - containerPort: 8501
           resources:
+            requests:
+              memory: "16Gi"
+              cpu: "8"
             limits:
-              nvidia.com/gpu: 1
-              memory: 16384Mi
-              cpu: 8
-      nodeSelector:
-        gpu: p100
+              memory: "24Gi"
+              cpu: "128"
