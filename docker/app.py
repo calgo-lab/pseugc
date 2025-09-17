@@ -15,7 +15,11 @@ import uvicorn
 
 
 # Logging setup
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(module)s | line: %(lineno)d | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
@@ -192,7 +196,7 @@ def _process_for_codealltag_mT5(input_data, output):
         per_text_output: List[DataItem] = list()
         for repeat_count in range(0, input_data.repeat):
             predicted_text = model_loader.predict_with_codealltag_mT5(input_text)
-            print(predicted_text)
+            logger.info(f"predicted_text for repeat_count={repeat_count}: {predicted_text}")
             output_df = get_annotation_df_with_input_text_and_predicted_text(input_text, predicted_text, labels)
             output_text = get_pseudonymized_text(input_text, output_df)
             data_item = DataItem(output_dict=output_df.to_dict(), output_text=output_text)
