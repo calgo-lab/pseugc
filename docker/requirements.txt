@@ -2,5 +2,5 @@ fastapi==0.115.7
 flair==0.11.1
 somajo==2.2.1
 streamlit==1.40.1
-transformers==4.18.0
+transformers==4.30.0
 uvicorn==0.34.0

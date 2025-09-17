@@ -1,17 +1,16 @@
-from flair.data import Sentence
 from fastapi import FastAPI, HTTPException
+from flair.data import Sentence
 from model_loader import ModelLoader
 from pandas import DataFrame
 from pydantic import BaseModel
 from somajo import SoMaJo
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 import logging
 import pandas as pd
 import re
 import subprocess
 import threading
-import torch
 import uvicorn
 
 
@@ -22,7 +21,7 @@ logger = logging.getLogger(__name__)
 # Initialize FastAPI app
 app = FastAPI()
 
-# Get the preloaded model instance
+# Get ModelLoader singleton instance
 model_loader = ModelLoader.get_instance()
 
 labels = ['CITY', 'DATE', 'EMAIL', 'FAMILY', 'FEMALE', 'MALE', 'ORG', 
@@ -49,7 +48,7 @@ class ApiResponse(BaseModel):
     output: List[List[DataItem]]
 
 def get_annotation_df_with_input_text_and_predicted_text(input_text: str, 
-                                                         predicted_text: str,
+                                                         predicted_text: str, 
                                                          labels: List[str]) -> DataFrame:
     tuples = list()
 
@@ -89,6 +88,9 @@ def get_annotation_df_with_input_text_and_predicted_text(input_text: str,
                 if start == -1 and ' ' in token:
                     token = token.replace(' ', '')
                     start = input_text_copy.find(token)
+                
+                if start == -1:
+                    start = input_text_copy.lower().find(token.lower())
 
                 if start != -1:
                     end = start + len(token)
@@ -118,11 +120,10 @@ def get_annotation_df_with_input_text_and_predicted_text(input_text: str,
 def get_pseudonymized_text(input_text: str, predicted_annotation_df: DataFrame) -> str:
     output_text = input_text
     offset = 0
-    for index, row in predicted_annotation_df.iterrows():
+    for _, row in predicted_annotation_df.iterrows():
         output_text = output_text[:(row.Start+offset)] + row.Pseudonym + output_text[(row.End+offset):]
         offset += len(row.Pseudonym) - len(row.Token)
     return output_text
-
 
 def _get_somajo_tokenized_sentences(text: str) -> List[Sentence]:
     tokenizer = SoMaJo("de_CMC", split_camel_case=False)
@@ -217,14 +218,12 @@ def _process_for_entity_set_and_model(input_data, output):
             output = _process_for_codealltag_mT5(input_data, output)
         else:
             output = _process_for_codealltag_tagger(input_data, output)
-
     return output
 
 @app.post("/predict", response_model=ApiResponse)
 def predict(input_data: ApiRequest):
     
     output: List[List[DataItem]] = list()
-    
     try:
         if not input_data.entity_set_id or input_data.entity_set_id not in supported_entity_set_model_dict.keys():
             msg: str = f'Invalid entity_set_id={input_data.entity_set_id}, supported values: {list(supported_entity_set_model_dict.keys())}'

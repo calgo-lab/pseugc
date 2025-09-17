@@ -246,7 +246,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-
 # Button to choose a random example
 if st.button("Use Example Text"):
     st.session_state.input_text = random.choice(example_texts)
@@ -254,7 +253,6 @@ if st.button("Use Example Text"):
 
 # Input text area using the session state variable
 input_text_area = st.text_area("Enter text here:", value=st.session_state.input_text, height=150)
-
 
 # Update repeat value based on slider
 def update_repeat():
@@ -323,10 +321,14 @@ if st.session_state["processed_data"]:
             )
         
         output_dict = output_item["output_dict"]
-        output_text = output_item["output_text"]
+        if st.session_state["model_id"] == "mt5":
+            output_text = output_item["output_text"]
+        else:
+            output_text = input_text_area
 
         token_ids = output_dict["Token_ID"].keys()
         decorated_output = ""
+        
         # Track last processed index
         prev_end = 0
         
@@ -343,7 +345,6 @@ if st.session_state["processed_data"]:
             if pseudonym:
                 start_idx = output_text.find(pseudonym, prev_end)
             else:
-                output_text = input_text_area
                 start_idx = output_text.find(token, prev_end)
             
             if start_idx != -1:
@@ -357,7 +358,6 @@ if st.session_state["processed_data"]:
                 )
 
                 # Place and decorate the pseudonym/label
-
                 if pseudonym:
                     decorated_output += (
                         f'<span class="{label.lower()}-label label-extra">{html.escape(pseudonym)}</span>'
@@ -385,9 +385,7 @@ if st.session_state["processed_data"]:
             unsafe_allow_html=True
         )
         
-        
         # Display plain pseudonymized output in pre formatted block
-
         if pseudonym:
             st.code(body=output_text, wrap_lines=True, language="text")
         

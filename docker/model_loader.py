@@ -1,16 +1,14 @@
+from flair.data import Sentence
+from flair.models import SequenceTagger
+from pathlib import Path
+from timeit import default_timer as timer
+from transformers import MT5ForConditionalGeneration, MT5TokenizerFast
+from typing import List
+
 import flair
 import logging
 import os
 import torch
-
-from flair.data import Sentence
-from flair.models import SequenceTagger
-from flair.nn import Model
-from pathlib import Path
-from somajo import SoMaJo
-from timeit import default_timer as timer
-from transformers import MT5ForConditionalGeneration, MT5TokenizerFast
-from typing import List
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -19,9 +17,9 @@ flair.cache_root = Path(os.path.join(*['/app', 'flair_cache_root']))
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-CODEALLTAG_MT5_MODEL_DIR_LIST: List[str] = ["models", "codealltag", "mT5"]
 CODEALLTAG_BILSTM_CRF_MODEL_DIR_LIST: List[str] = ["models", "codealltag", "BiLSTM_CRF"]
 CODEALLTAG_GELECTRA_MODEL_DIR_LIST: List[str] = ["models", "codealltag", "GELECTRA"]
+CODEALLTAG_MT5_MODEL_DIR_LIST: List[str] = ["models", "codealltag", "mT5"]
 CODEALLTAG_SUPPORTED_TAGGERS: List[str] = ['codealltag_bilstmcrf', 'codealltag_gelectra']
 
 
@@ -44,16 +42,14 @@ class ModelLoader:
             self.codealltag_mT5_model = MT5ForConditionalGeneration.from_pretrained(os.path.join(*CODEALLTAG_MT5_MODEL_DIR_LIST))
             self.codealltag_mT5_tokenizer = MT5TokenizerFast.from_pretrained(os.path.join(*CODEALLTAG_MT5_MODEL_DIR_LIST))
             self.codealltag_mT5_model.eval()
-            
+
             self.codealltag_bilstmcrf_tagger = SequenceTagger.load(os.path.join(*CODEALLTAG_BILSTM_CRF_MODEL_DIR_LIST, 'model.pt'))
-            print(self.codealltag_bilstmcrf_tagger.embeddings)
             
             self.codealltag_gelectra_tagger = SequenceTagger.load(os.path.join(*CODEALLTAG_GELECTRA_MODEL_DIR_LIST, 'model.pt'))
-            print(self.codealltag_gelectra_tagger.embeddings)
-            
+
             logger.info("Models loaded successfully.")
         except Exception as e:
-            logger.error("Failed to load models: {str(e)}")
+            logger.error(f"Failed to load models: {str(e)}")
             raise RuntimeError("Models loading failed!")
     
     def predict_with_codealltag_mT5(self, input_text):
@@ -61,9 +57,9 @@ class ModelLoader:
         start = timer()
         
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        device_stat = "CPU" if device == "cpu" else torch.cuda.get_device_name(0)
-        print(f"device_stat: {device_stat}")
+
+        device_stat = "CPU" if device.type == "cpu" else torch.cuda.get_device_name(0)
+        logger.info(f"device_stat: {device_stat}")
         
         tokenized_outputs = self.codealltag_mT5_tokenizer.batch_encode_plus(
             [input_text],
@@ -80,11 +76,11 @@ class ModelLoader:
         attention_mask = attention_mask.to(device)
         
         outs = self.codealltag_mT5_model.generate(input_ids=input_ids,
-                                   attention_mask=attention_mask,
-                                   max_length=512,
-                                   temperature=0.8,
-                                   do_sample=True,
-                                   top_k=100)
+                                                  attention_mask=attention_mask,
+                                                  max_length=512,
+                                                  temperature=0.8,
+                                                  do_sample=True,
+                                                  top_k=100)
         dec = [
             self.codealltag_mT5_tokenizer.decode(ids, skip_special_tokens=True, clean_up_tokenization_spaces=False).strip()
             for ids in outs
@@ -92,7 +88,7 @@ class ModelLoader:
         
         end = timer()
         
-        print(f"inference_time: {round(end - start, 3)}s")
+        logger.info(f"inference_time: {round(end - start, 3)}s")
         
         return dec[0]
     
@@ -109,4 +105,3 @@ class ModelLoader:
             return None
         
         return sentences
-        
